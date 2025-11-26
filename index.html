@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Español ⇄ Ruso con voz (Gratis)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0; padding: 20px;
+      background: #f3f4f6; color: #111827;
+    }
+    .app {
+      max-width: 960px; margin: 0 auto;
+      background: white; padding: 20px;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+    h1 { text-align: center; margin-bottom: 10px; }
+    .row { display: flex; flex-wrap: wrap; gap: 16px; }
+    .col { flex: 1 1 280px; }
+    textarea {
+      width: 100%; min-height: 120px;
+      padding: 10px; border-radius: 10px;
+      border: 1px solid #d1d5db;
+      font-size: 0.95rem;
+    }
+    button {
+      padding: 8px 14px;
+      border-radius: 999px;
+      cursor: pointer; border: none;
+      background: #e5e7eb; font-size: 0.9rem;
+      margin-right: 6px; margin-top: 8px;
+    }
+    button.primary { background: #2563eb; color: white; }
+    .status { margin-top: 10px; font-size: 0.85rem; color: #6b7280; }
+    select, input[type=range] { width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Español ⇄ Ruso con voz (Gratis)</h1>
+
+    <div class="row">
+      <div class="col">
+        <label>Español</label>
+        <textarea id="esText"></textarea>
+        <label>Voz español</label>
+        <select id="voiceEs"></select>
+        <button class="primary" id="btnEsRu">Traducir ES → RU</button>
+        <button id="btnSpeakEs">🔊 Leer ES</button>
+        <button id="btnMicEs">🎤 Hablar ES</button>
+      </div>
+
+      <div class="col">
+        <label>Ruso</label>
+        <textarea id="ruText"></textarea>
+        <label>Voz ruso</label>
+        <select id="voiceRu"></select>
+        <button class="primary" id="btnRuEs">Traducir RU → ES</button>
+        <button id="btnSpeakRu">🔊 Leer RU</button>
+        <button id="btnMicRu">🎤 Hablar RU</button>
+      </div>
+    </div>
+
+    <div style="margin-top:20px;">
+      <label>Velocidad</label>
+      <input type="range" id="rate" min="0.5" max="2" step="0.1" value="1">
+      <label>Tono</label>
+      <input type="range" id="pitch" min="0.5" max="2" step="0.1" value="1">
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    const esText = document.getElementById('esText');
+    const ruText = document.getElementById('ruText');
+    const statusEl = document.getElementById('status');
+
+    const voiceEsSelect = document.getElementById('voiceEs');
+    const voiceRuSelect = document.getElementById('voiceRu');
+
+    const rate = document.getElementById('rate');
+    const pitch = document.getElementById('pitch');
+
+    function setStatus(t){ statusEl.textContent = t; }
+
+    // ========================
+    //   CARGAR VOCES
+    // ========================
+    function loadVoices() {
+      const voices = speechSynthesis.getVoices();
+
+      voiceEsSelect.innerHTML = '';
+      voiceRuSelect.innerHTML = '';
+
+      voices.filter(v => v.lang.startsWith("es"))
+            .forEach((v,i) => {
+              voiceEsSelect.innerHTML += `<option>${v.name}</option>`;
+            });
+
+      voices.filter(v => v.lang.startsWith("ru"))
+            .forEach((v,i) => {
+              voiceRuSelect.innerHTML += `<option>${v.name}</option>`;
+            });
+
+      if(!voiceEsSelect.innerHTML)
+        voiceEsSelect.innerHTML = "<option>(Sin voces ES)</option>";
+      if(!voiceRuSelect.innerHTML)
+        voiceRuSelect.innerHTML = "<option>(Sin voces RU)</option>";
+    }
+
+    speechSynthesis.onvoiceschanged = loadVoices;
+    setTimeout(loadVoices, 300);
+
+    // ========================
+    //   TRADUCTOR MYMEMORY
+    // ========================
+    function translate(text, from, to, cb) {
+      if(!text.trim()) return cb("");
+
+      setStatus(`Traduciendo ${from} → ${to} ...`);
+
+      const url =
+        "https://api.mymemory.translated.net/get?q="
+        + encodeURIComponent(text)
+        + "&langpair=" + from + "|" + to;
+
+      fetch(url)
+        .then(r => r.json())
+        .then(d => {
+          setStatus("");
+          if(d && d.responseData && d.responseData.translatedText)
+            cb(d.responseData.translatedText);
+          else
+            cb("");
+        })
+        .catch(e => { setStatus("Error."); cb(""); });
+    }
+
+    // ========================
+    //   TTS
+    // ========================
+    function speak(text, lang, mode){
+      if(!text.trim()) return;
+
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = lang;
+      u.rate = parseFloat(rate.value);
+      u.pitch = parseFloat(pitch.value);
+
+      const voices = speechSynthesis.getVoices();
+      if(mode === "es"){
+        u.voice = voices.find(v => v.name === voiceEsSelect.value);
+      } else {
+        u.voice = voices.find(v => v.name === voiceRuSelect.value);
+      }
+
+      speechSynthesis.speak(u);
+    }
+
+    // ========================
+    //   RECONOCIMIENTO DE VOZ
+    // ========================
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    const recEs = SR ? new SR() : null;
+    const recRu = SR ? new SR() : null;
+
+    if(recEs){
+      recEs.lang = "es-ES";
+      recEs.onresult = e => {
+        esText.value = e.results[0][0].transcript;
+        translate(esText.value, "es", "ru", t => ruText.value = t);
+      };
+    }
+
+    if(recRu){
+      recRu.lang = "ru-RU";
+      recRu.onresult = e => {
+        ruText.value = e.results[0][0].transcript;
+        translate(ruText.value, "ru", "es", t => esText.value = t);
+      };
+    }
+
+    // ========================
+    //   BOTONES
+    // ========================
+    document.getElementById("btnEsRu").onclick =
+      () => translate(esText.value, "es", "ru", t => ruText.value = t);
+
+    document.getElementById("btnRuEs").onclick =
+      () => translate(ruText.value, "ru", "es", t => esText.value = t);
+
+    document.getElementById("btnSpeakEs").onclick =
+      () => speak(esText.value, "es-ES", "es");
+
+    document.getElementById("btnSpeakRu").onclick =
+      () => speak(ruText.value, "ru-RU", "ru");
+
+    document.getElementById("btnMicEs").onclick =
+      () => recEs && recEs.start();
+
+    document.getElementById("btnMicRu").onclick =
+      () => recRu && recRu.start();
+
+  </script>
+</body>
+</html>
